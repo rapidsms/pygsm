@@ -211,6 +211,9 @@ class GsmModem(object):
         self.command("ATE0",      raise_errors=False) # echo off
         self.command("AT+CMEE=1", raise_errors=False) # useful error messages
         self.command("AT+WIND=0", raise_errors=False) # disable notifications
+        # switch to text mode, and make sure it's a mode that handles
+        # latin characters
+        self.command('AT+CSCS="PCCP437"'            ) # Default on multitechs. We REALLY should support 'GSM'
         self.command("AT+CMGF=1"                    ) # switch to TEXT mode
 
         # enable new message notification
@@ -492,28 +495,13 @@ class GsmModem(object):
 
 
     def _add_incoming(self, timestamp, sender, text):
-
-        # since neither message notifications nor messages
-        # fetched from storage give any indication of their
-        # encoding, we're going to have to guess. if the
-        # text has a multiple-of-four length and starts
-        # with a UTF-16 Byte Order Mark, try to decode it
-        # into a unicode string
+        # try to decode inbound message
         try:
-            if (len(text) % 4 == 0) and (len(text) > 0):
-                bom = text[:4].lower()
-                if bom == "fffe"\
-                or bom == "feff":
-                    
-                    # decode the text into a unicode string,
-                    # so developers embedding pyGSM need never
-                    # experience this confusion and pain
-                    text = text.decode("hex").decode("utf-16")
-
-        # oh dear. it looked like hex-encoded utf-16,
-        # but wasn't. who sends a message like that?!
+            text=text.decode('cp437')
         except:
-            pass
+            # I don't think this is possible... it will always 
+            # be interpreted, even if wrong
+            return None
 
         # create and store the IncomingMessage object
         time_sent = self._parse_incoming_timestamp(timestamp)
@@ -552,7 +540,6 @@ class GsmModem(object):
             # Outer handler: if the command caused an error,
             # maybe wrap it and return None
             except errors.GsmError, err:
-
                 # if GSM Error 515 (init or command in progress) was raised,
                 # lock the thread for a short while, and retry. don't lock
                 # the modem while we're waiting, because most commands WILL
@@ -569,7 +556,8 @@ class GsmModem(object):
 
                 # otherwise, allow errors to propagate upwards,
                 # and hope someone is waiting to catch them
-                else: raise(err)
+                else: 
+                    raise(err)
 
         # if the first line of the response echoes the cmd
         # (it shouldn't, if ATE0 worked), silently drop it
@@ -639,29 +627,19 @@ class GsmModem(object):
 
         old_mode = None
         with self.modem_lock:
+            # outer try to catch any error and make sure to
+            # get the modem out of 'waiting for data' mode
             try:
+                # try to catch write timeouts
                 try:
-                    # cast the text to a string, to check that
-                    # it doesn't contain non-ascii characters
+                    # try for casting unicode
                     try:
-                        text = str(text)
-
-                    # uh-oh. unicode ahoy
-                    except UnicodeEncodeError:
-
-                        # fetch and store the current mode (so we can
-                        # restore it later), and override it with UCS2
-                        csmp = self.query("AT+CSMP?", "+CSMP:")
-                        if csmp is not None:
-                            old_mode = csmp.split(",")
-                            mode = old_mode[:]
-                            mode[3] = "8"
-
-                            # enable hex mode, and set the encoding
-                            # to UCS2 for the full character set
-                            self.command('AT+CSCS="HEX"')
-                            self.command("AT+CSMP=%s" % ",".join(mode))
-                            text = text.encode("utf-16").encode("hex")
+                        text = text.encode("cp437")
+                    except UnicodeEncodeError as uerr:
+                        # uh-oh, not in standard 'latin' characters
+                        # require UTF16, which we aren't handling 
+                        uerr.message='Non-latin characters not support in text messages'
+                        raise uerr
 
                     # initiate the sms, and give the device a second
                     # to raise an error. unfortunately, we can't just
@@ -701,14 +679,6 @@ class GsmModem(object):
                 # (obviously, this sucks. there should be an
                 # option, at least, but i'm being cautious)
                 return None
-
-            finally:
-
-                # if the mode was overridden above, (if this
-                # message contained unicode), switch it back
-                if old_mode is not None:
-                    self.command("AT+CSMP=%s" % ",".join(old_mode))
-                    self.command('AT+CSCS="GSM"')
 
 
     def hardware(self):
