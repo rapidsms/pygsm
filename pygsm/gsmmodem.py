@@ -1,18 +1,19 @@
 #!/usr/bin/env python
-# vim: ai ts=4 sts=4 et sw=4
+# vim: ai ts=4 sts=4 et sw=4 encoding=utf8
 
 
 from __future__ import with_statement
 
+
+# arch: pacman -S python-pyserial
+# debian: apt-get install python-serial
+import serial
 import re, datetime, time
 import errors, message
 import traceback
-import StringIO
 import threading
+import gsmcodecs
 
-# arch: pacman -S python-pyserial
-# debian: apt-get install pyserial
-import serial
 
 # Constants
 CMGL_STATUS="REC UNREAD" 
@@ -213,7 +214,7 @@ class GsmModem(object):
         self.command("AT+WIND=0", raise_errors=False) # disable notifications
         # switch to text mode, and make sure it's a mode that handles
         # latin characters
-        self.command('AT+CSCS="PCCP437"'            ) # Default on multitechs. We REALLY should support 'GSM'
+        self.command('AT+CSCS="GSM"'                ) # Default encoding sent by handsets for latin script
         self.command("AT+CMGF=1"                    ) # switch to TEXT mode
 
         # enable new message notification
@@ -497,7 +498,7 @@ class GsmModem(object):
     def _add_incoming(self, timestamp, sender, text):
         # try to decode inbound message
         try:
-            text=text.decode('cp437')
+            text=text.decode('gsm')
         except:
             # I don't think this is possible... it will always 
             # be interpreted, even if wrong
@@ -634,7 +635,7 @@ class GsmModem(object):
                 try:
                     # try for casting unicode
                     try:
-                        text = text.encode("cp437")
+                        text = text.encode('gsm')
                     except UnicodeEncodeError as uerr:
                         # uh-oh, not in standard 'latin' characters
                         # require UTF16, which we aren't handling 
@@ -755,7 +756,7 @@ class GsmModem(object):
         lines = self._strip_ok(self.command('AT+CMGL="%s"' % CMGL_STATUS))
         # loop through all the lines attempting to match CMGL lines (the header)
         # and then match NOT CMGL lines (the content)
-        # need to seed the loop first
+        # need to seed the loop first 'cause Python no like 'until' loops
         num_found=0
         if len(lines)>0:
             m=CMGL_MATCHER.match(lines[0])
@@ -775,17 +776,17 @@ class GsmModem(object):
 
             # now loop through, popping content until we get
             # the next CMGL or out of lines
-            msg_buf=StringIO.StringIO()
+            msg_text=list()
             while len(lines)>0:
                 m=CMGL_MATCHER.match(lines[0])
                 if m is not None:
                     # got another header, get out
                     break
                 else:
-                    msg_buf.write(lines.pop(0))
+                    msg_text.append(lines.pop(0))
 
             # get msg text
-            msg_text=msg_buf.getvalue().strip()
+            msg_text=''.join(msg_text)
 
             # now create message
             self._add_incoming(timestamp,sender,msg_text)
