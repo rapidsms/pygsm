@@ -502,6 +502,7 @@ class GsmModem(object):
         except:
             # I don't think this is possible... it will always 
             # be interpreted, even if wrong
+            traceback.print_exc()
             return None
 
         # create and store the IncomingMessage object
@@ -669,7 +670,7 @@ class GsmModem(object):
             # for all other errors...
             # (likely CMS or CME from device)
             except Exception as err:
-                
+                traceback.print_exc()
                 # whatever went wrong, break out of the
                 # message prompt. if this is missed, all
                 # subsequent writes will go into the message!
@@ -864,8 +865,8 @@ if __name__ == "__main__":
             # something useless, as an example
             if msg is not None:
                 print "Got Message: %r" % msg
-                msg.respond("Thanks for those %d characters!" %
-                    len(msg.text))
+                msg.respond("Received: %d characters '%s'" %
+                    (len(msg.text),msg.text))
 
             # no messages? wait a couple
             # of seconds and try again
