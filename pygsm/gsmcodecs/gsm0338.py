@@ -39,11 +39,11 @@ def _decode(input,errors='strict'):
     # standard decoder
     
     # split to see if we have any 'extended' characters
-    runs=str_splitter.split(input)
+    runs = str_splitter.split(input)
 
     # now iterate through handling any 'multibyte' ourselves
-    out_uni=list()
-    consumed=0
+    out_uni = []
+    consumed = 0
     for run in runs:
         if len(run)==0:
             # first char was a marker, but we don't care
@@ -52,15 +52,18 @@ def _decode(input,errors='strict'):
         if len(run)==2 and run[0]==extended_indicator:
             try:
                 out_uni.append(extended_decode_map[run[1]])
+                consumed += 2
+                continue
             except KeyError:
-                raise ValueError(\
-                    '\\x%s not a GSM extended char' % run[1].encode('hex'))
-            consumed+=2 # we ate two inputs for one out
-        else:
-            # pass it to the standard encoder
-            out,cons=codecs.charmap_decode(run,errors,decoding_table)
-            out_uni.append(out)
-            consumed+=cons
+                # second char was not an extended, so
+                # let this pass through and the marker
+                # will be inerpreted by the table as a NBSP
+                pass
+
+        # pass it to the standard encoder
+        out,cons=codecs.charmap_decode(run,errors,decoding_table)
+        out_uni.append(out)
+        consumed+=cons
     return (u''.join(out_uni),consumed)
 
 
@@ -69,6 +72,11 @@ class Codec(codecs.Codec):
         return _encode(input,errors)
 
     def decode(self,input,errors='strict'):
+        # strip any trailing '\x00's as the standard
+        # says trailing ones are _not_ @'s and 
+        # are in fact blanks
+        if input[-1]=='\x00':
+            input=input[:-1]
         return _decode(input,errors)
 
 class IncrementalEncoder(codecs.IncrementalEncoder):
@@ -85,6 +93,12 @@ class IncrementalDecoder(codecs.IncrementalDecoder):
         self.last_saw_mark=False
 
     def decode(self, input, final=False):
+        if final:
+            # check for final '\x00' which should not
+            # be interpreted as a '@'
+            if input[-1]=='\x00':
+                input=input[:-1]
+
         # keep track of how many chars we've added or
         # removed to the run to adjust the response from
         # _decode
