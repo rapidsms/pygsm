@@ -77,7 +77,7 @@ setup(
     # data_files = data_files,
     # package_data = {'rapidsms': ['skeleton/project/*.ini',
     #                             'skeleton/project/manage.py']},
-    # scripts = ["rapidsms"],
+    scripts = ['pygsm_demo'],
     cmdclass={'build_py': build_py},
     long_description = """
 PyGSM is a Free and Open Source library for interfacing with
