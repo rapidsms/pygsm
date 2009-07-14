@@ -13,20 +13,6 @@ import sys
 import commands
 import traceback
 
-def fullsplit(path, result=None):
-    """
-    Split a pathname into components (the opposite of os.path.join) in a
-    platform-neutral way.
-    """
-    if result is None:
-        result = []
-    head, tail = os.path.split(path)
-    if head == '':
-        return [tail] + result
-    if head == path:
-        return result
-    return fullsplit(head, [tail] + result)
-
 # Tell distutils to put the data_files in platform-specific installation
 # locations. See here for an explanation:
 # http://groups.google.com/group/comp.lang.python/browse_thread/thread/35ec7b2fed36eaec/2105ee4d9e8042cb
@@ -35,12 +21,15 @@ for scheme in INSTALL_SCHEMES.values():
 
 # Compile the list of packages available, because distutils doesn't have
 # an easy way to do this.
-packages = [
-    dir 
+wd = os.getcwd()
+os.chdir('lib')
+packages = [ 
+    dir
     for dir,dirs,files
     in os.walk('pygsm')
     if '__init__.py' in files
     ]
+os.chdir(wd)
 
 # Dynamically calculate the version based on get_rapidsms_version()
 # ... this way releases automagically get shipped with the version
@@ -73,6 +62,7 @@ setup(
     maintainer_email = "rapidsms@googlegroups.com",
     description = "Library for interfacing with GSM modems",
     url = "http://www.rapidsms.org/",
+    package_dir = {'': 'lib'},
     packages = packages,
     # data_files = data_files,
     # package_data = {'rapidsms': ['skeleton/project/*.ini',
