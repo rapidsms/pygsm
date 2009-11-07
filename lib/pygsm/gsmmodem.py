@@ -440,16 +440,17 @@ class GsmModem(object):
                 pass
 
             # now decode the message
+            pdu = None
             try:
                 pdu = gsmpdu.ReceivedGsmPdu(pdu_line)
-            except:
+            except Exception, ex:
                 self._log('Error parsing PDU: %s', pdu_line)
             self._process_incoming_pdu(pdu)
         
             # jump over the CMT line, and the
             # pdu line, and continue iterating
             n += 2
-
+ 
         # return the lines that we weren't
         # interested in (almost all of them!)
         return output_lines

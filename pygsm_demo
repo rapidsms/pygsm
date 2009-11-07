@@ -2,12 +2,17 @@
 # vim: ai ts=4 sts=4 et sw=4
 
 
-from pygsm.gsmmodem import GsmModem
+import os
 import sys,time
 
 if __name__ == "__main__":
-
     if len(sys.argv) >= 2:
+        
+        # add lib dir from local path first to make sure
+        # pygsm from the local dir is used over any system installed
+        # version of pygsm
+        sys.path.insert(0,os.path.join(os.path.dirname(sys.argv[0]),'lib'))
+        from pygsm import GsmModem
 
         # the first argument is SERIAL PORT
         # (required, since we have no autodetect yet)
