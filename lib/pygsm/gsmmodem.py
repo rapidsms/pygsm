@@ -444,7 +444,8 @@ class GsmModem(object):
             try:
                 pdu = gsmpdu.ReceivedGsmPdu(pdu_line)
             except Exception, ex:
-                self._log('Error parsing PDU: %s', pdu_line)
+                traceback.print_exc(ex)
+                self._log('Error parsing PDU: %s' % pdu_line)
             self._process_incoming_pdu(pdu)
         
             # jump over the CMT line, and the
@@ -819,6 +820,7 @@ class GsmModem(object):
                 try:
                     pdu = gsmpdu.ReceivedGsmPdu(pl)
                 except:
+                    traceback.print_exc(ex)
                     self._log('Error parsing PDU: %s' % pl)
                 self._process_incoming_pdu(pdu)
 
