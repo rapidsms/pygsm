@@ -402,13 +402,12 @@ class ReceivedGsmPdu(GsmPdu):
             # seems they use big-endian...
         
             bom=pdu[0:4]
-            if bom==codecs.BOM_UTF16_LE.encode('hex') or \
-                    bom==codecs.BOM_UTF16_BE.encode('hex'):
-                codec='utf_16' # which will read the BOM
+            decoded_text = ''
+            if bom==codecs.BOM_UTF16_LE.encode('hex'):
+                decoded_text=pdu.decode('hex').decode('utf_16_le')
             else:
-                codec='utf_16_be' # which will assume no BOM and big-endian
-            self.text=pdu.decode('hex').decode(codec)
-
+                decoded_text=pdu.decode('hex').decode('utf_16_be')
+            self.text=decoded_text
         # some phones add a leading <cr> so strip it
         self.text=self.text.strip()
 
@@ -523,6 +522,10 @@ def _read_ts(seq):
 
     ts=_twiddle(seq)
     m = TS_MATCHER.match(ts)
+    if m is None:
+        print "TS not valid: %s" % ts
+        return datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
+    
     yr,mo,dy,hr,mi,se=[int(g) for g in m.groups()[:-1]]
 
     # handle time-zone separately to deal with
