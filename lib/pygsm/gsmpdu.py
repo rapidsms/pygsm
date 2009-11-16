@@ -404,7 +404,7 @@ class ReceivedGsmPdu(GsmPdu):
             bom=pdu[0:4]
             decoded_text = ''
             if bom==codecs.BOM_UTF16_LE.encode('hex'):
-                decoded_text=pdu.decode('hex').decode('utf_16_le')
+                decoded_text=pdu[4:].decode('hex').decode('utf_16_le')
             else:
                 decoded_text=pdu.decode('hex').decode('utf_16_be')
             self.text=decoded_text

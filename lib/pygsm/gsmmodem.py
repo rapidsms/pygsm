@@ -4,25 +4,17 @@
 
 from __future__ import with_statement
 
-
-# arch: pacman -S python-pyserial
-# debian/ubuntu: apt-get install python-serial
-import serial
-
 # debian/ubuntu: apt-get install python-tz
-import pytz 
 
-import re, datetime, time
-import errors, message
-import traceback
+import re
+import datetime
+import time
+import errors
 import threading
 import gsmcodecs
-import gsmpdu
-
-# Constants
-CMGL_STATUS="0" 
-CMGL_MATCHER=re.compile(r'^\+CMGL:.*?$')
-HEX_MATCHER=re.compile(r'^[0-9a-f]+$')
+from devicewrapper import DeviceWrapper
+from pdusmshandler import PduSmsHandler
+from textsmshandler import TextSmsHandler
 
 class GsmModem(object):
     """pyGSM is a Python module which uses pySerial to provide a nifty
@@ -98,6 +90,10 @@ class GsmModem(object):
         if "logger" in kwargs:
             self.logger = kwargs.pop("logger")
         
+        mode = "PDU"
+        if "mode" in kwargs:
+            mode = kwargs.pop("mode")
+        
         # if a ready-made device was provided, store it -- self.connect
         # will see that we're already connected, and do nothing. we'll
         # just assume it quacks like a serial port
@@ -121,7 +117,11 @@ class GsmModem(object):
 
         # to store unhandled incoming messages
         self.incoming_queue = []
-
+        
+        if mode.lower() == "text":
+            self.smshandler = TextSmsHandler(self)
+        else:
+            self.smshandler = PduSmsHandler(self)
         # boot the device on init, to fail as
         # early as possible if it can't be opened
         self.boot()
@@ -136,7 +136,7 @@ class GsmModem(object):
         "error":   1 }
     
     
-    def _log(self, str, type="debug"):
+    def _log(self, str_, type_="debug"):
         """Proxies a log message to this Modem's logger, if one has been set.
            This is useful for applications embedding pyGSM that wish to show
            or log what's going on inside.
@@ -154,12 +154,12 @@ class GsmModem(object):
            >>> GsmModem("/dev/ttyUSB0", logger=GsmModem.logger)"""
         
         if hasattr(self, "logger"):
-            self.logger(self, str, type)
+            self.logger(self, str_, type_)
     
     
     @staticmethod
-    def logger(modem, message, type):
-        print "%8s %s" % (type, message)
+    def logger(_modem, message_, type_):
+        print "%8s %s" % (type_, message_)
     
     
     def connect(self, reconnect=False):
@@ -172,8 +172,8 @@ class GsmModem(object):
         # the reconnect flag is irrelevant
         if not hasattr(self, "device") or (self.device is None):
             with self.modem_lock:
-                self.device = serial.Serial(
-                    *self.device_args,
+                self.device = DeviceWrapper(
+                    self.logger, *self.device_args,
                     **self.device_kwargs)
                 
         # the port already exists, but if we're
@@ -218,7 +218,7 @@ class GsmModem(object):
         self.command("AT+CMEE=1", raise_errors=False) # useful error messages
         self.command("AT+WIND=0", raise_errors=False) # disable notifications
         self.command("AT+CSMS=1", raise_errors=False) # set SMS mode to phase 2+
-        self.command("AT+CMGF=0"                    ) # make sure in PDU mode
+        self.command(self.smshandler.get_mode_cmd()      ) # make sure in PDU mode
 
         # enable new message notification
         self.command(
@@ -273,131 +273,6 @@ class GsmModem(object):
         except OSError, err:
             raise(errors.GsmWriteError)
 
-
-    def _read(self, read_term=None, read_timeout=None):
-        """Read from the modem (blocking) until _terminator_ is hit,
-           (defaults to \r\n, which reads a single "line"), and return."""
-        
-        buffer = []
-
-        # if a different timeout was requested just
-        # for _this_ read, store and override the
-        # current device setting (not thread safe!)
-        if read_timeout is not None:
-            old_timeout = self.device.timeout
-            self.device.timeout = read_timeout
-
-        def __reset_timeout():
-            """restore the device's previous timeout
-               setting, if we overrode it earlier."""
-            if read_timeout is not None:
-                self.device.timeout =\
-                    old_timeout
-
-        # the default terminator reads
-        # until a newline is hit
-        if read_term is None:
-            read_term = "\r\n"
-
-        while(True):
-            buf = self.device.read()
-            buffer.append(buf)
-
-            # if a timeout was hit, raise an exception including the raw data that
-            # we've already read (in case the calling func was _expecting_ a timeout
-            # (wouldn't it be nice if serial.Serial.read returned None for this?)
-            if buf == '':
-                __reset_timeout()
-                raise(errors.GsmReadTimeoutError(buffer))
-
-            # if last n characters of the buffer match the read
-            # terminator, return what we've received so far
-            if ''.join(buffer[-len(read_term):]) == read_term:
-                buf_str = ''.join(buffer)
-                __reset_timeout()
-
-                self._log(repr(buf_str), 'read')
-                return buf_str
-
-
-    def _wait(self, read_term=None, read_timeout=None):
-        """Read from the modem (blocking) one line at a time until a response
-           terminator ("OK", "ERROR", or "CMx ERROR...") is hit, then return
-           a list containing the lines."""
-        buffer = []
-
-        # keep on looping until a command terminator
-        # is encountered. these are NOT the same as the
-        # "read_term" argument - only OK or ERROR is valid
-        while(True):
-            buf = self._read(
-                read_term=read_term,
-                read_timeout=read_timeout)
-
-            buf = buf.strip()
-            buffer.append(buf)
-
-            # most commands return OK for success, but there
-            # are some exceptions. we're not checking those
-            # here (unlike RubyGSM), because they should be
-            # handled when they're _expected_
-            if buf == "OK":
-                return buffer
-
-            # some errors contain useful error codes, so raise a
-            # proper error with a description from pygsm/errors.py
-            m = re.match(r"^\+(CM[ES]) ERROR: (\d+)$", buf)
-            if m is not None:
-                type, code = m.groups()
-                raise(errors.GsmModemError(type, int(code)))
-
-            # ...some errors are not so useful
-            # (at+cmee=1 should enable error codes)
-            if buf == "ERROR":
-                raise(errors.GsmModemError)
-
-
-    SCTS_FMT = "%y/%m/%d,%H:%M:%S"
-    def _parse_incoming_timestamp(self, timestamp):
-        """Parse a Service Center Time Stamp (SCTS) string into a Python datetime
-           object, or None if the timestamp couldn't be parsed. The SCTS format does
-           not seem to be standardized, but looks something like: YY/MM/DD,HH:MM:SS."""
-
-        # timestamps usually have trailing timezones, measured
-        # in 15-minute intervals (?!), which is not handled by
-        # python's datetime lib. if _this_ timezone does, chop
-        # it off, and note the actual offset in minutes
-        tz_pattern = r"([-+])(\d+)$"
-        m = re.search(tz_pattern, timestamp)
-        if m is not None:
-            timestamp = re.sub(tz_pattern, "", timestamp)
-            tz_offset = datetime.timedelta(minutes=int(m.group(2)) * 15)
-            if m.group(1)=='-':
-                tz_offset = -tz_offset
-
-        # we won't be modifying the output, but
-        # still need an empty timedelta to subtract
-        else: 
-            tz_offset = datetime.timedelta()
-
-        # attempt to parse the (maybe modified) timestamp into
-        # a time_struct, and convert it into a datetime object
-        try:
-            time_struct = time.strptime(timestamp, self.SCTS_FMT)
-            dt = datetime.datetime(*time_struct[:6])
-            dt.replace(tzinfo=pytz.utc)
-           
-            # patch the time to represent UTC, since
-            dt-=tz_offset
-            return dt
-
-        # if the timestamp couldn't be parsed, we've encountered
-        # a format the pyGSM doesn't support. this sucks, but isn't
-        # important enough to explode like RubyGSM does
-        except ValueError:
-            traceback.print_exc()
-            return None
-
     def _parse_incoming_sms(self, lines):
         """Parse a list of lines (the output of GsmModem._wait), to extract any
            incoming SMS and append them to GsmModem.incoming_queue. Returns the
@@ -420,7 +295,7 @@ class GsmModem(object):
                 n += 1
                 continue
 
-            pdu_line = lines[n+1].strip()
+            msg_line = lines[n+1].strip()
 
             # notify the network that we accepted
             # the incoming message (for read receipt)
@@ -439,15 +314,10 @@ class GsmModem(object):
                 # TODO: also log this!
                 pass
 
-            # now decode the message
-            pdu = None
-            try:
-                pdu = gsmpdu.ReceivedGsmPdu(pdu_line)
-            except Exception, ex:
-                traceback.print_exc(ex)
-                self._log('Error parsing PDU: %s' % pdu_line)
-            self._process_incoming_pdu(pdu)
-        
+            msg = self.smshandler.parse_incoming_message(lines[n], msg_line)
+            if msg is not None:
+                self.incoming_queue.append(msg)
+
             # jump over the CMT line, and the
             # pdu line, and continue iterating
             n += 2
@@ -455,74 +325,7 @@ class GsmModem(object):
         # return the lines that we weren't
         # interested in (almost all of them!)
         return output_lines
-
-    def _process_incoming_pdu(self, pdu):
-        if pdu is None:
-            return
-
-        # is this a multi-part (concatenated short message, csm)?
-        if pdu.is_csm:
-            # process pdu will either
-            # return a 'super' pdu with the entire
-            # message (if this is the last segment)
-            # or None if there are more segments coming
-            pdu = self._process_csm(pdu)
-            
-        if pdu is not None:
-            self._add_incoming_pdu(pdu)
-
-    def _process_csm(self, pdu):
-        if not pdu.is_csm:
-            return pdu
-
-        # self.multipart is a dict of dicts of dicts
-        # holding all parts of messages by sender
-        # e.g. { '4155551212' : { 0: { seq1: pdu1, seq2: pdu2{ } }
-        #
-        if pdu.address not in self.multipart:
-            self.multipart[pdu.address]={}
-
-        sender_msgs=self.multipart[pdu.address]
-        if pdu.csm_ref not in sender_msgs:
-            sender_msgs[pdu.csm_ref]={}
-
-        # these are all the pdus in this 
-        # sequence we've recived
-        received = sender_msgs[pdu.csm_ref]
-        received[pdu.csm_seq]=pdu
-
-        # do we have them all?
-        if len(received)==pdu.csm_total:
-            pdus=received.values()
-            pdus.sort(key=lambda x: x.csm_seq)
-            text = ''.join([p.text for p in pdus])
-            
-            # now make 'super-pdu' out of the first one
-            # to hold the full text
-            super_pdu = pdus[0]
-            super_pdu.csm_seq = 0
-            super_pdu.csm_total = 0
-            super_pdu.pdu_string = None
-            super_pdu.text = text
-            super_pdu.encoding = None
         
-            del sender_msgs[pdu.csm_ref]
-            
-            return super_pdu
-        else:
-            return None
-        
-    def _add_incoming_pdu(self, pdu):
-        if pdu.text is None or len(pdu.text)==0:
-            self._log('Blank inbound text, ignoring')
-            return
-
-        msg = message.IncomingMessage(self,
-                                      pdu.address,
-                                      pdu.sent_ts,
-                                      pdu.text)
-        self.incoming_queue.append(msg)
-
     def command(self, cmd, read_term=None, read_timeout=None, write_term="\r", raise_errors=True):
         """Issue a single AT command to the modem, and return the sanitized
            response. Sanitization removes status notifications, command echo,
@@ -542,10 +345,10 @@ class GsmModem(object):
                 # response
                 with self.modem_lock:
                     self._write(cmd + write_term)
-                    lines = self._wait(
+                    lines = self.device.read_lines(
                         read_term=read_term,
                         read_timeout=read_timeout)
-
+                    
                 # no exception was raised, so break
                 # out of the enclosing WHILE loop
                 break
@@ -631,7 +434,7 @@ class GsmModem(object):
         return None
 
 
-    def send_sms(self, recipient, text, max_messages=255):
+    def send_sms(self, recipient, text):
         """
         Sends an SMS to _recipient_ containing _text_. 
 
@@ -643,69 +446,11 @@ class GsmModem(object):
         Raises 'ValueError' if text will not fit in max_messages
 
         """
-        pdus = gsmpdu.get_outbound_pdus(text, recipient)
-
-        if len(pdus) > max_messages:
-            raise ValueError(
-                'Max_message is %d and text requires %d messages' %
-                (max_messages, len(pdus))
-                )
-
-        for pdu in pdus:
-            self._send_pdu(pdu)
-
-    def _send_pdu(self, pdu):
         with self.modem_lock:
-            # outer try to catch any error and make sure to
-            # get the modem out of 'waiting for data' mode
-            try:
-                # accesing the property causes the pdu_string
-                # to be generated, so do once and cache
-                pdu_string = pdu.pdu_string
+            self.smshandler.send_sms(recipient, text)
 
-                # try to catch write timeouts
-                try:
-                    # content length is in bytes, so half PDU minus
-                    # the first blank '00' byte
-                    result = self.command( 
-                        'AT+CMGS=%d' % (len(pdu_string)/2 - 1), 
-                        read_timeout=1
-                        )
-
-                # if no error is raised within the timeout period,
-                # and the text-mode prompt WAS received, send the
-                # sms text, wait until it is accepted or rejected
-                # (text-mode messages are terminated with ascii char 26
-                # "SUBSTITUTE" (ctrl+z)), and return True (message sent)
-                except errors.GsmReadTimeoutError, err:
-                    if err.pending_data[0] == ">":
-                        self.command(pdu_string, write_term=chr(26))
-                        return True
-
-                    # a timeout was raised, but no prompt nor
-                    # error was received. i have no idea what
-                    # is going on, so allow the error to propagate
-                    else:
-                        raise
-
-                finally:
-                    pass
-                        
-            # for all other errors...
-            # (likely CMS or CME from device)
-            except Exception:
-                traceback.print_exc()
-                # whatever went wrong, break out of the
-                # message prompt. if this is missed, all
-                # subsequent writes will go into the message!
-                self._write(chr(27))
-
-                # rule of thumb: pyGSM is meant to be embedded,
-                # so DO NOT EVER allow exceptions to propagate
-                # (obviously, this sucks. there should be an
-                # option, at least, but i'm being cautious)
-                return None
-
+    def break_out_of_prompt(self):
+        self._write(chr(27))
 
     def hardware(self):
         """Returns a dict of containing information about the physical
@@ -775,57 +520,16 @@ class GsmModem(object):
 
 
     def _fetch_stored_messages(self):
-        """Fetch stored messages with CMGL and add to incoming queue
-           Return number fetched"""
-
-        lines = self._strip_ok(self.command('AT+CMGL=%s' % CMGL_STATUS))
-        # loop through all the lines attempting to match CMGL lines (the header)
-        # and then match NOT CMGL lines (the content)
-        # need to seed the loop first 'cause Python no like 'until' loops
-        pdu_lines=[]
-        if len(lines)>0:
-            m=CMGL_MATCHER.match(lines[0])
-
-        while len(lines)>0:
-            if m is None:
-                # couldn't match OR no text data following match
-                raise(errors.GsmReadError())
-
-            # if here, we have a match AND text
-            # start by popping the header (which we have stored in the 'm'
-            # matcher object already)
-            lines.pop(0)
-
-            # now loop through, popping content until we get
-            # the next CMGL or out of lines
-            while len(lines)>0:
-                m=CMGL_MATCHER.match(lines[0])
-                if m is not None:
-                    # got another header, get out
-                    break
-                else:
-                    # HACK: For some reason on the multitechs the first
-                    # PDU line has the second '+CMGL' response tacked on
-                    # this may be a multitech bug or our bug in 
-                    # reading the responses. For now, split the response
-                    # on +CMGL
-                    line = lines.pop(0)
-                    line, cmgl, rest = line.partition('+CMGL')
-                    if len(cmgl)>0:
-                        lines.insert(0,'%s%s' % (cmgl,rest))
-                    pdu_lines.append(line)
-
-            # now create and process PDUs
-            for pl in pdu_lines:
-                try:
-                    pdu = gsmpdu.ReceivedGsmPdu(pl)
-                except:
-                    traceback.print_exc(ex)
-                    self._log('Error parsing PDU: %s' % pl)
-                self._process_incoming_pdu(pdu)
-
-        return len(pdu_lines)
-
+        """
+        Fetch stored messages with CMGL and add to incoming queue
+        Return number fetched
+        
+        """    
+        lines = self.command('AT+CMGL=%s' % self.smshandler.CMGL_STATUS)
+        lines = self._strip_ok(lines)
+        messages = self.smshandler.parse_stored_messages(lines)
+        for msg in messages:
+            self.incoming_queue.append(msg)
 
     def next_message(self, ping=True, fetch=True):
         """Returns the next waiting IncomingMessage object, or None if the
@@ -899,7 +603,8 @@ if __name__ == "__main__":
 
             # no messages? wait a couple
             # of seconds and try again
-            else: time.sleep(2)
+            else: 
+                time.sleep(2)
 
     # the serial port must be provided
     # we're not auto-detecting, yet

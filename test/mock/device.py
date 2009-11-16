@@ -3,7 +3,7 @@
 
 
 import time, re
-
+from pygsm import errors
 
 class MockDevice(object):
 
@@ -59,6 +59,62 @@ class MockDevice(object):
         self._debug("READ (%d): %r" % (size, read))
         return read
 
+    def _read(self, read_timeout=None):
+        """Read from the modem (blocking) until _terminator_ is hit,
+           (defaults to \r\n, which reads a single "line"), and return."""
+        
+        buffer = []
+        read_term = "\r\n"
+        self.timeout = read_timeout
+        while(True):
+            buf = self.read()
+            buffer.append(buf)			
+            # if a timeout was hit, raise an exception including the raw data that
+            # we've already read (in case the calling func was _expecting_ a timeout
+            # (wouldn't it be nice if serial.Serial.read returned None for this?)
+            if buf == '':
+                raise(errors.GsmReadTimeoutError(buffer))
+
+            # if last n characters of the buffer match the read
+            # terminator, return what we've received so far
+            if ''.join(buffer[-len(read_term):]) == read_term:
+                buf_str = ''.join(buffer)
+                print 'Read ' + buf_str
+                return buf_str
+
+    def read_lines(self, read_term=None, read_timeout=None):
+        """Read from the modem (blocking) one line at a time until a response
+           terminator ("OK", "ERROR", or "CMx ERROR...") is hit, then return
+           a list containing the lines."""
+        buffer = []
+
+        # keep on looping until a command terminator
+        # is encountered. these are NOT the same as the
+        # "read_term" argument - only OK or ERROR is valid
+        while(True):
+            buf = self._read(read_timeout)
+
+            buf = buf.strip()
+            buffer.append(buf)
+
+            # most commands return OK for success, but there
+            # are some exceptions. we're not checking those
+            # here (unlike RubyGSM), because they should be
+            # handled when they're _expected_
+            if buf == "OK":
+                return buffer
+
+            # some errors contain useful error codes, so raise a
+            # proper error with a description from pygsm/errors.py
+            m = re.match(r"^\+(CM[ES]) ERROR: (\d+)$", buf)
+            if m is not None:
+                type, code = m.groups()
+                raise(errors.GsmModemError(type, int(code)))
+
+            # ...some errors are not so useful
+            # (at+cmee=1 should enable error codes)
+            if buf == "ERROR":
+                raise(errors.GsmModemError)
 
     def write(self, str):
         """Appends _str_ to the write buffer, which represents input to this "modem".
@@ -193,7 +249,7 @@ class MockDevice(object):
     def _error(self):
         """Insert a GSM "ERROR" string into the read buffer.
            This should be called when a command fails."""
-
+        
         self._output("ERROR")
         return False
 

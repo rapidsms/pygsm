@@ -8,22 +8,35 @@ import pygsm
 from mock.device import MockDevice, MockSenderDevice
 
 
-class TestIncomingMessage(unittest.TestCase):
+class TestModem(unittest.TestCase):
 
-    def testSendSms(self):
-        """Checks that the GsmModem accepts outgoing SMS,
+    def testSendSmsPDUMode(self):
+        """Checks that the GsmModem in PDU mode accepts outgoing SMS,
            when the text is within ASCII chars 22 - 126."""
 
         # this device is much more complicated than
         # most, so is tucked away in mock.device
         device = MockSenderDevice()
-        gsm = pygsm.GsmModem(device=device)
+        gsm = pygsm.GsmModem(device=device, mode="PDU")
+
+        # send an sms, and check that it arrived safely
+        gsm.send_sms("1234", "Test Message")
+        self.assertEqual(device.sent_messages[0]["recipient"], "21")
+        self.assertEqual(device.sent_messages[0]["text"], "00110004A821430000AA0CD4F29C0E6A96E7F3F0B90C")
+
+    def testSendSmsTextMode(self):
+        """Checks that the GsmModem in TEXT mode accepts outgoing SMS,
+           when the text is within ASCII chars 22 - 126."""
+
+        # this device is much more complicated than
+        # most, so is tucked away in mock.device
+        device = MockSenderDevice()
+        gsm = pygsm.GsmModem(device=device, mode="TEXT")
 
         # send an sms, and check that it arrived safely
         gsm.send_sms("1234", "Test Message")
         self.assertEqual(device.sent_messages[0]["recipient"], "1234")
         self.assertEqual(device.sent_messages[0]["text"], "Test Message")
-
 
     def testRetryCommands(self):
         """Checks that the GsmModem automatically retries
