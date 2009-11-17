@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-# vim: ai ts=4 sts=4 et sw=4
-
+# vim: ai ts=4 sts=4 et sw=4 encoding=utf-8
 
 import unittest
 import pygsm
@@ -64,6 +63,5 @@ class TestBase(unittest.TestCase):
         self.mocker.ReplayAll()
         self.gsm = pygsm.GsmModem(device=self.mockDevice, mode=self.get_mode())
         
-#        self.mocker.VerifyAll()
         self.mocker.ResetAll()
         
