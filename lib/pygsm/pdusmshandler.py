@@ -7,8 +7,6 @@ import errors, message
 import re
 from smshandler import SmsHandler
 
-MAX_MESSAGES =255
-
 class PduSmsHandler(SmsHandler):
     CMGL_MATCHER =re.compile(r'^\+CMGL:.*?$')
     CMGL_STATUS="0"
@@ -19,12 +17,20 @@ class PduSmsHandler(SmsHandler):
     def get_mode_cmd(self):
         return "AT+CMGF=0"
 
-    def send_sms(self, recipient, text):
+    def send_sms(self, recipient, text, max_messages = 255):
+        """
+        Method will automatically split long 'text' into
+        multiple SMSs up to max_messages.
+ 
+        To enforce only a single SMS, set max_messages=1
+ 
+        Raises 'ValueError' if text will not fit in max_messages
+        """ 
         pdus = gsmpdu.get_outbound_pdus(text, recipient)
-        if len(pdus) > MAX_MESSAGES:
+        if len(pdus) > max_messages:
             raise ValueError(
                 'Max_message is %d and text requires %d messages' %
-                (MAX_MESSAGES, len(pdus))
+                (max_messages, len(pdus))
                 )
 
         for pdu in pdus:

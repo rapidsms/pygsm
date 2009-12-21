@@ -18,12 +18,15 @@ class TextSmsHandler(SmsHandler):
     def get_mode_cmd(self):
         return "AT+CMGF=1"
         
-    def send_sms(self, recipient, text):
+    def send_sms(self, recipient, text, max_messages = 255):
         """Sends an SMS to _recipient_ containing _text_. Some networks
            will automatically chunk long messages into multiple parts,
            and reassembled them upon delivery, but some will silently
            drop them. At the moment, pyGSM does nothing to avoid this,
-           so try to keep _text_ under 160 characters."""
+           so try to keep _text_ under 160 characters.
+           
+           Currently 'max_messages' is ignored
+        """
 
         old_mode = None
         try:

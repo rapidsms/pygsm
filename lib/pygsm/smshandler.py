@@ -11,7 +11,11 @@ class SmsHandler(object):
         self.modem = modem
         self.multipart = {}
 
-    def send_sms(self, recipient, text):
+    def send_sms(self, recipient, text, max_messages = 255):
+        """
+        Note: Only PDU mode handler respects 'max_messages'
+        
+        """
         raise Exception(ERR_MSG)
     
     def get_mode_cmd(self):
