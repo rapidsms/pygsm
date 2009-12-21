@@ -14,30 +14,34 @@ class TestModem(unittest.TestCase):
         # this device is much more complicated than
         # most, so is tucked away in mock.device
         device = MockSenderDevice()
-        gsm = pygsm.GsmModem(device=device, mode="PDU")
+        gsmPDU = pygsm.GsmModem(device=device, mode="PDU")
+        gsmTEXT = pygsm.GsmModem(device=device, mode="TEXT")
 
-        # test with no max_message arg
-        gsm.send_sms("1234", "Test Message")
-        self.assertEqual(device.sent_messages[0]["recipient"], "21")
-        self.assertEqual(device.sent_messages[0]["text"], "00110004A821430000AA0CD4F29C0E6A96E7F3F0B90C")
-        
-        # test with reasonable max_message arg, should have no impact
-        gsm.send_sms("1234", "Test Message", max_messages = 20)
-        self.assertEqual(device.sent_messages[0]["recipient"], "21")
-        self.assertEqual(device.sent_messages[0]["text"], "00110004A821430000AA0CD4F29C0E6A96E7F3F0B90C")
-        
-        # test with max_message = 0, should internally set to 1 with no problems
-        gsm.send_sms("1234", "Test Message", -1)
-        self.assertEqual(device.sent_messages[0]["recipient"], "21")
-        self.assertEqual(device.sent_messages[0]["text"], "00110004A821430000AA0CD4F29C0E6A96E7F3F0B90C")
-        
-        # test with max_message > 255, should internally force to 255
-        gsm.send_sms("1234", "Test Message", 1024)
-        self.assertEqual(device.sent_messages[0]["recipient"], "21")
-        self.assertEqual(device.sent_messages[0]["text"], "00110004A821430000AA0CD4F29C0E6A96E7F3F0B90C")
-        
+        for gsm in (gsmPDU, gsmTEXT):
+            # test with no max_message arg
+            gsm.send_sms("1234", "Test Message")
+            self.assertEqual(device.sent_messages[0]["recipient"], "21")
+            self.assertEqual(device.sent_messages[0]["text"], "00110004A821430000AA0CD4F29C0E6A96E7F3F0B90C")
+            
+            # test with reasonable max_message arg, should have no impact
+            gsm.send_sms("1234", "Test Message", max_messages = 20)
+            self.assertEqual(device.sent_messages[0]["recipient"], "21")
+            self.assertEqual(device.sent_messages[0]["text"], "00110004A821430000AA0CD4F29C0E6A96E7F3F0B90C")
+            
+            # test with max_message = 0, should internally set to 1 with no problems
+            gsm.send_sms("1234", "Test Message", -1)
+            self.assertEqual(device.sent_messages[0]["recipient"], "21")
+            self.assertEqual(device.sent_messages[0]["text"], "00110004A821430000AA0CD4F29C0E6A96E7F3F0B90C")
+            
+            # test with max_message > 255, should internally force to 255
+            gsm.send_sms("1234", "Test Message", 1024)
+            self.assertEqual(device.sent_messages[0]["recipient"], "21")
+            self.assertEqual(device.sent_messages[0]["text"], "00110004A821430000AA0CD4F29C0E6A96E7F3F0B90C")
+            
         # test with max_message = 1 and message too long to fit
         # should throw a value exception
+        #
+        # ONLY SUPPORTED IN PDU MODE, so run on PDU configured gsmmodem only
         msg="""
         0123456789012345678901234567890123456789012345678901234567890123456789
         0123456789012345678901234567890123456789012345678901234567890123456789
@@ -48,12 +52,12 @@ class TestModem(unittest.TestCase):
         0123456789012345678901234567890123456789012345678901234567890123456789
         """
         try:
-            gsm.send_sms("1234", msg, max_messages=1)
+            gsmPDU.send_sms("1234", msg, max_messages=1)
         except ValueError:
             print "ValueError caught"
         else:
             # Should have thrown an error!
-            self.assertTrue(False)
+            self.assertTrue(False) # SMS too big should throw ValueError
 
     def testSendSmsPDUMode(self):
         """Checks that the GsmModem in PDU mode accepts outgoing SMS,
