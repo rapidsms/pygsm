@@ -7,7 +7,6 @@ from __future__ import with_statement
 # debian/ubuntu: apt-get install python-tz
 
 import re
-import datetime
 import time
 import errors
 import threading
@@ -434,7 +433,7 @@ class GsmModem(object):
         return None
 
 
-    def send_sms(self, recipient, text):
+    def send_sms(self, recipient, text, max_messages = 255):
         """
         Sends an SMS to _recipient_ containing _text_. 
 
@@ -444,10 +443,12 @@ class GsmModem(object):
         To enforce only a single SMS, set max_messages=1
 
         Raises 'ValueError' if text will not fit in max_messages
+        
+        NOTE: Only PDU mode respects max_messages! It has no effect in TEXT mode
 
         """
         with self.modem_lock:
-            self.smshandler.send_sms(recipient, text)
+            self.smshandler.send_sms(recipient, text, max_messages)
 
     def break_out_of_prompt(self):
         self._write(chr(27))
