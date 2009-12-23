@@ -10,6 +10,27 @@ import errors
 class DeviceWrapper(object):
     
     def __init__(self, logger, *args, **kwargs):
+
+        # Sanitize arguments before sending to pySerial
+
+        # force cast strings from the .ini (which show up
+        # in kwargs) to ints because strings seem to make
+        # pySerial on Windows unhappy
+        
+        for key in ['baudrate', 
+                    'xonxoff',
+                    'rtscts',
+                    'stopbits',
+                    'timeout',
+                    'interCharTimeout'
+                    ]:
+            if key in kwargs:
+                try:
+                    kwargs[key] = int(kwargs[key])
+                except:
+                    # not a valid value, just remove
+                    kwargs.pop(key)
+
         self.device = serial.Serial(*args, **kwargs)
         self.logger = logger
 
@@ -103,6 +124,7 @@ class DeviceWrapper(object):
             if buf == "ERROR":
                 raise(errors.GsmModemError)
 
-    def _log(self, str, type="debug"):
+    def _log(self, str_, type_="debug"):
         if hasattr(self, "logger"):
-            self.logger(self, str, type)    
+            self.logger(self, str_, type_)    
+            
