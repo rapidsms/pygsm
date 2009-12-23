@@ -21,8 +21,7 @@ class DeviceWrapper(object):
                     'xonxoff',
                     'rtscts',
                     'stopbits',
-                    'timeout',
-                    'interCharTimeout'
+                    'timeout'
                     ]:
             if key in kwargs:
                 try:
