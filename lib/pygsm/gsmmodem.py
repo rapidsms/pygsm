@@ -193,7 +193,7 @@ class GsmModem(object):
         self._log("Disconnecting")
         
         # attempt to close and destroy the device
-        if hasattr(self, "device") and (self.device is None):
+        if hasattr(self, "device") and (self.device is not None):
             with self.modem_lock:
                 if self.device.isOpen():
                     self.device.close()
