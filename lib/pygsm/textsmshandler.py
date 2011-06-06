@@ -99,6 +99,7 @@ class TextSmsHandler(SmsHandler):
             if old_mode is not None:
                 self.modem.command("AT+CSMP=%s" % ",".join(old_mode))
                 self.modem.command('AT+CSCS="GSM"')
+        return True
 
     # returns a list of messages
     def parse_stored_messages(self, lines):

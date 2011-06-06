@@ -35,6 +35,7 @@ class PduSmsHandler(SmsHandler):
 
         for pdu in pdus:
             self._send_pdu(pdu)
+        return True
             
     def _send_pdu(self, pdu):
         # outer try to catch any error and make sure to
