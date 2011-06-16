@@ -464,6 +464,7 @@ class GsmModem(object):
         
         with self.modem_lock:
             self.smshandler.send_sms(recipient, text, mm)
+        return True
 
     def break_out_of_prompt(self):
         self._write(chr(27))
